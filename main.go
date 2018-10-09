@@ -21,8 +21,8 @@ import (
 type Block struct {
 	Index     int
 	Timestamp string
-	fileHash  string
-	event	  string
+	FileHash  string
+	Event     string
 	Hash      string
 	PrevHash  string
 }
@@ -32,10 +32,10 @@ var Blockchain []Block
 
 var BlockMap map[string]*Block
 
-// Message takes incoming JSON payload for writing heart rate
+// Message takes incoming JSON payload for writing hash
 type Message struct {
-	fileHash string
-	event    string
+	FileHash string
+	Event    string
 }
 
 var mutex = &sync.Mutex{}
@@ -119,7 +119,7 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 
 // takes JSON payload as an input for log (fileHash)
 func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	// w.Header().Set("Content-Type", "application/json")
 	var m Message
 
 	decoder := json.NewDecoder(r.Body)
@@ -130,7 +130,7 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	mutex.Lock()
-	newBlock := generateBlock(Blockchain[len(Blockchain)-1], m.fileHash, m.event)
+	newBlock := generateBlock(Blockchain[len(Blockchain)-1], m.FileHash, m.Event)
 	mutex.Unlock()
 
 	if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
@@ -175,7 +175,7 @@ func isBlockValid(newBlock, oldBlock Block) bool {
 
 // SHA256 hasing
 func calculateHash(block Block) string {
-	record := strconv.Itoa(block.Index) + block.Timestamp + block.fileHash + block.event + block.PrevHash
+	record := strconv.Itoa(block.Index) + block.Timestamp + block.FileHash + block.Event + block.PrevHash
 	h := sha256.New()
 	h.Write([]byte(record))
 	hashed := h.Sum(nil)
@@ -191,8 +191,8 @@ func generateBlock(oldBlock Block, fileHash string, event string) Block {
 
 	newBlock.Index = oldBlock.Index + 1
 	newBlock.Timestamp = t.String()
-	newBlock.fileHash = fileHash
-	newBlock.event = event
+	newBlock.FileHash = fileHash
+	newBlock.Event = event
 	newBlock.PrevHash = oldBlock.Hash
 	newBlock.Hash = calculateHash(newBlock)
 
