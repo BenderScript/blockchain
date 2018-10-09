@@ -179,13 +179,13 @@ func handleConn(conn net.Conn) {
 		break
 	}
 
-	io.WriteString(conn, "\nEnter a new BPM:")
+	io.WriteString(conn, "\nEnter a new filehash:")
 
 	scanBPM := bufio.NewScanner(conn)
 
 	go func() {
 		for {
-			// take in BPM from stdin and add it to blockchain after conducting necessary validation
+			// take in filehash from stdin and add it to blockchain after conducting necessary validation
 			for scanBPM.Scan() {
 				bpm, err := strconv.Atoi(scanBPM.Text())
 				// if malicious party tries to mutate the chain with a bad input, delete them as a validator and they lose their staked tokens
@@ -208,7 +208,7 @@ func handleConn(conn net.Conn) {
 				if isBlockValid(newBlock, oldLastIndex) {
 					candidateBlocks <- newBlock
 				}
-				io.WriteString(conn, "\nEnter a new BPM:")
+				io.WriteString(conn, "\nEnter a new filehash:")
 			}
 		}
 	}()

@@ -71,11 +71,11 @@ func handleConn(conn net.Conn) {
 
 	defer conn.Close()
 
-	io.WriteString(conn, "Enter a new BPM:")
+	io.WriteString(conn, "Enter a new filehash:")
 
 	scanner := bufio.NewScanner(conn)
 
-	// take in BPM from stdin and add it to blockchain after conducting necessary validation
+	// take in filehash from stdin and add it to blockchain after conducting necessary validation
 	go func() {
 		for scanner.Scan() {
 			bpm, err := strconv.Atoi(scanner.Text())
@@ -94,7 +94,7 @@ func handleConn(conn net.Conn) {
 			}
 
 			bcServer <- Blockchain
-			io.WriteString(conn, "\nEnter a new BPM:")
+			io.WriteString(conn, "\nEnter a new filehash:")
 		}
 	}()
 

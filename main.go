@@ -21,7 +21,8 @@ import (
 type Block struct {
 	Index     int
 	Timestamp string
-	BPM       int
+	fileHash  string
+	event	  string
 	Hash      string
 	PrevHash  string
 }
@@ -29,9 +30,12 @@ type Block struct {
 // Blockchain is a series of validated Blocks
 var Blockchain []Block
 
+var BlockMap map[string]*Block
+
 // Message takes incoming JSON payload for writing heart rate
 type Message struct {
-	BPM int
+	fileHash string
+	event    string
 }
 
 var mutex = &sync.Mutex{}
@@ -42,10 +46,12 @@ func main() {
 		log.Fatal(err)
 	}
 
+	BlockMap = make(map[string]*Block)
+
 	go func() {
 		t := time.Now()
 		genesisBlock := Block{}
-		genesisBlock = Block{0, t.String(), 0, calculateHash(genesisBlock), ""}
+		genesisBlock = Block{0, t.String(), "", "", calculateHash(genesisBlock), ""}
 		spew.Dump(genesisBlock)
 
 		mutex.Lock()
@@ -80,11 +86,28 @@ func run() error {
 func makeMuxRouter() http.Handler {
 	muxRouter := mux.NewRouter()
 	muxRouter.HandleFunc("/", handleGetBlockchain).Methods("GET")
-	muxRouter.HandleFunc("/", handleWriteBlock).Methods("POST")
+	muxRouter.HandleFunc("/block/{hash}", handleGetOneBlockChain).Methods("GET")
+	muxRouter.HandleFunc("/block", handleWriteBlock).Methods("POST")
 	return muxRouter
 }
 
-// write blockchain when we receive an http request
+// Get a specific Block
+func handleGetOneBlockChain(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	fileHash := vars["hash"]
+	block := BlockMap[fileHash]
+	// We pass pointed to block but Marshall converts the actual
+	// object
+	bytes, err := json.MarshalIndent(block, "", "  ")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	io.WriteString(w, string(bytes))
+
+}
+
+// get blockchain when we receive an http request
 func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 	bytes, err := json.MarshalIndent(Blockchain, "", "  ")
 	if err != nil {
@@ -94,7 +117,7 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, string(bytes))
 }
 
-// takes JSON payload as an input for heart rate (BPM)
+// takes JSON payload as an input for log (fileHash)
 func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var m Message
@@ -107,13 +130,16 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	mutex.Lock()
-	newBlock := generateBlock(Blockchain[len(Blockchain)-1], m.BPM)
+	newBlock := generateBlock(Blockchain[len(Blockchain)-1], m.fileHash, m.event)
 	mutex.Unlock()
 
 	if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
 		Blockchain = append(Blockchain, newBlock)
 		spew.Dump(Blockchain)
 	}
+
+	// Add block to hash map so it can be searched in O(1)
+	BlockMap[newBlock.Hash] = &newBlock
 
 	respondWithJSON(w, r, http.StatusCreated, newBlock)
 
@@ -149,7 +175,7 @@ func isBlockValid(newBlock, oldBlock Block) bool {
 
 // SHA256 hasing
 func calculateHash(block Block) string {
-	record := strconv.Itoa(block.Index) + block.Timestamp + strconv.Itoa(block.BPM) + block.PrevHash
+	record := strconv.Itoa(block.Index) + block.Timestamp + block.fileHash + block.event + block.PrevHash
 	h := sha256.New()
 	h.Write([]byte(record))
 	hashed := h.Sum(nil)
@@ -157,7 +183,7 @@ func calculateHash(block Block) string {
 }
 
 // create a new block using previous block's hash
-func generateBlock(oldBlock Block, BPM int) Block {
+func generateBlock(oldBlock Block, fileHash string, event string) Block {
 
 	var newBlock Block
 
@@ -165,7 +191,8 @@ func generateBlock(oldBlock Block, BPM int) Block {
 
 	newBlock.Index = oldBlock.Index + 1
 	newBlock.Timestamp = t.String()
-	newBlock.BPM = BPM
+	newBlock.fileHash = fileHash
+	newBlock.event = event
 	newBlock.PrevHash = oldBlock.Hash
 	newBlock.Hash = calculateHash(newBlock)
 
