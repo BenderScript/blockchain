@@ -24,6 +24,9 @@ type Block struct {
 	Timestamp string
 	FileHash  string
 	Event     string
+	EventTime string
+	Location  string
+	Server    string
 	Hash      string
 	PrevHash  string
 }
@@ -35,9 +38,18 @@ var BlockMap map[string]*Block
 
 // Message takes incoming JSON payload for writing hash
 type CreateBlockReq struct {
-	FileHash string
-	Event    string
+	FileHash  string
+	Event     string
+	EventTime string
+	Location  string
+	Server    string
 }
+
+//"FileHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+//"Event": "unathorized access",
+//"EventTime": "2018-04-23T18:25:43.511Z",
+//"Location" : "San Jose, CA",
+//"Server" : "vpn-1-sjc.ssl.cisco.com"
 
 type ValidationReq struct {
 	CreateMessage CreateBlockReq
@@ -62,7 +74,7 @@ func main() {
 	go func() {
 		t := time.Now()
 		genesisBlock := Block{}
-		genesisBlock = Block{0, t.String(), "", "", calculateHash(genesisBlock), ""}
+		genesisBlock = Block{0, t.String(), "", "", "", "", "", calculateHash(genesisBlock), ""}
 		spew.Dump(genesisBlock)
 
 		mutex.Lock()
@@ -108,25 +120,25 @@ func handleValidation(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var v ValidationReq
 	var vResp ValidationResp
-	var ok bool
-	var status = http.StatusCreated
+	var valid bool
+	var status = http.StatusBadRequest
 
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&v); err != nil {
-		respondWithJSON(w, r, http.StatusBadRequest, r.Body)
+		respondWithJSON(w, r, status, r.Body)
 		return
 	}
 	defer r.Body.Close()
 
-	block := BlockMap[v.Hash]
-	if strings.Compare(block.Event, v.CreateMessage.Event) == 0 {
-		ok = true
-	} else {
-		status = http.StatusBadRequest
+	if block, ok := BlockMap[v.Hash]; ok {
+		if strings.Compare(block.Event, v.CreateMessage.Event) == 0 {
+			valid = true
+			status = http.StatusCreated
+		}
 	}
 
 	vResp.ValidationMessage = v
-	vResp.Result = ok
+	vResp.Result = valid
 
 	respondWithJSON(w, r, status, vResp)
 
@@ -175,7 +187,7 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	if len(m.Event) != 0 {
 
 		mutex.Lock()
-		newBlock = generateBlock(Blockchain[len(Blockchain)-1], m.FileHash, m.Event)
+		newBlock = generateBlock(Blockchain[len(Blockchain)-1], m.FileHash, m.Event, m.EventTime, m.Location, m.Server)
 		mutex.Unlock()
 
 		if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
@@ -223,7 +235,7 @@ func isBlockValid(newBlock, oldBlock Block) bool {
 
 // SHA256 hasing
 func calculateHash(block Block) string {
-	record := strconv.Itoa(block.Index) + block.Timestamp + block.FileHash + block.Event + block.PrevHash
+	record := strconv.Itoa(block.Index) + block.Timestamp + block.FileHash + block.Event + block.EventTime + block.Location + block.Server + block.PrevHash
 	h := sha256.New()
 	h.Write([]byte(record))
 	hashed := h.Sum(nil)
@@ -231,7 +243,7 @@ func calculateHash(block Block) string {
 }
 
 // create a new block using previous block's hash
-func generateBlock(oldBlock Block, fileHash string, event string) Block {
+func generateBlock(oldBlock Block, fileHash string, event string, eventTime string, location string, server string) Block {
 
 	var newBlock Block
 
@@ -241,6 +253,9 @@ func generateBlock(oldBlock Block, fileHash string, event string) Block {
 	newBlock.Timestamp = t.String()
 	newBlock.FileHash = fileHash
 	newBlock.Event = event
+	newBlock.EventTime = eventTime
+	newBlock.Location = location
+	newBlock.Server = server
 	newBlock.PrevHash = oldBlock.Hash
 	newBlock.Hash = calculateHash(newBlock)
 
