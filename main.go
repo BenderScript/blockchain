@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,9 +34,19 @@ var Blockchain []Block
 var BlockMap map[string]*Block
 
 // Message takes incoming JSON payload for writing hash
-type Message struct {
+type CreateBlockReq struct {
 	FileHash string
 	Event    string
+}
+
+type ValidationReq struct {
+	CreateMessage CreateBlockReq
+	Hash          string
+}
+
+type ValidationResp struct {
+	ValidationMessage ValidationReq
+	Result            bool
 }
 
 var mutex = &sync.Mutex{}
@@ -86,9 +97,39 @@ func run() error {
 func makeMuxRouter() http.Handler {
 	muxRouter := mux.NewRouter()
 	muxRouter.HandleFunc("/", handleGetBlockchain).Methods("GET")
+	muxRouter.HandleFunc("/validation", handleValidation).Methods("POST")
 	muxRouter.HandleFunc("/block/{hash}", handleGetOneBlockChain).Methods("GET")
 	muxRouter.HandleFunc("/block", handleWriteBlock).Methods("POST")
 	return muxRouter
+}
+
+// takes JSON payload as an input for log (fileHash)
+func handleValidation(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var v ValidationReq
+	var vResp ValidationResp
+	var ok bool
+	var status = http.StatusCreated
+
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&v); err != nil {
+		respondWithJSON(w, r, http.StatusBadRequest, r.Body)
+		return
+	}
+	defer r.Body.Close()
+
+	block := BlockMap[v.Hash]
+	if strings.Compare(block.Event, v.CreateMessage.Event) == 0 {
+		ok = true
+	} else {
+		status = http.StatusBadRequest
+	}
+
+	vResp.ValidationMessage = v
+	vResp.Result = ok
+
+	respondWithJSON(w, r, status, vResp)
+
 }
 
 // Get a specific Block
@@ -120,7 +161,9 @@ func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
 // takes JSON payload as an input for log (fileHash)
 func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	// w.Header().Set("Content-Type", "application/json")
-	var m Message
+	var m CreateBlockReq
+	var statusCode = http.StatusCreated
+	var newBlock Block
 
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&m); err != nil {
@@ -129,19 +172,24 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	mutex.Lock()
-	newBlock := generateBlock(Blockchain[len(Blockchain)-1], m.FileHash, m.Event)
-	mutex.Unlock()
+	if len(m.Event) != 0 {
 
-	if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
-		Blockchain = append(Blockchain, newBlock)
-		spew.Dump(Blockchain)
+		mutex.Lock()
+		newBlock = generateBlock(Blockchain[len(Blockchain)-1], m.FileHash, m.Event)
+		mutex.Unlock()
+
+		if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
+			Blockchain = append(Blockchain, newBlock)
+			spew.Dump(Blockchain)
+		}
+
+		// Add block to hash map so it can be searched in O(1)
+		BlockMap[newBlock.Hash] = &newBlock
+	} else {
+		statusCode = http.StatusBadRequest
 	}
 
-	// Add block to hash map so it can be searched in O(1)
-	BlockMap[newBlock.Hash] = &newBlock
-
-	respondWithJSON(w, r, http.StatusCreated, newBlock)
+	respondWithJSON(w, r, statusCode, newBlock)
 
 }
 
